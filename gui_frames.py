@@ -9,8 +9,8 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 import os
 import time
+import webbrowser
 
-# 移除了 re 和 generate_pdf_report 的导入
 try:
     import openpyxl
 except ImportError:
@@ -20,14 +20,13 @@ except ImportError:
 # parse_channel_selection 函数已从此处移除
 
 
-# --- 1. ConnectionFrame (无需修改) ---
+# --- 1. ConnectionFrame ---
 class ConnectionFrame(ttk.Frame):
-    # ... 此部分代码与之前版本完全相同 ...
     def __init__(self, parent, controller):
         super().__init__(parent)
         self.controller = controller
         self.device_type_var = tk.StringVar(value="1-80")
-        self.columnconfigure(0, weight=1)
+        self.columnconfigure(0, weight=1);
         self.columnconfigure(2, weight=1)
         ttk.Label(self, text="设备TCP/IP地址:", font=("Helvetica", 12)).grid(row=0, column=1, pady=(20, 5))
         self.ip_entry = ttk.Entry(self, width=30)
@@ -55,31 +54,47 @@ class ConnectionFrame(ttk.Frame):
                                       command=lambda: controller.show_frame("RunningFrame"))
         self.next_button.grid(row=6, column=1, pady=20)
 
+        # --- About ---
+        about_button = ttk.Button(self, text="About", command=self.open_github_link)
+        about_button.grid(row=7, column=1, pady=10)
+
+    # --- 打开链接的方法 ---
+    def open_github_link(self):
+        """
+        在用户的默认浏览器中打开指定的GitHub链接。
+        """
+        url = "https://github.com/Ashes2Ashes233/TemPyScan"
+        print(f"Opening link: {url}")
+        try:
+            webbrowser.open_new(url)
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not open the link.\nError: {e}")
+
     def connect_device(self):
-        ip_address = self.ip_entry.get()
+        ip_address = self.ip_entry.get();
         device_type = self.device_type_var.get()
         if not ip_address: messagebox.showerror("错误", "请输入IP地址"); return
         if self.controller.connect_instrument(ip_address, device_type):
-            self.status_label.config(text="状态: 已连接", foreground="green")
-            self.device_id_label.config(text=f"设备号: {self.controller.get_device_id()}")
-            self.connect_button.config(state="disabled")
-            self.disconnect_button.config(state="normal")
+            self.status_label.config(text="状态: 已连接", foreground="green");
+            self.device_id_label.config(text=f"设备号: {self.controller.get_device_id()}");
+            self.connect_button.config(state="disabled");
+            self.disconnect_button.config(state="normal");
             self.next_button.config(state="normal")
         else:
-            self.status_label.config(text="状态: 连接失败", foreground="red")
-            self.device_id_label.config(text="设备号: N/A")
+            self.status_label.config(text="状态: 连接失败", foreground="red");
+            self.device_id_label.config(text="设备号: N/A");
             messagebox.showerror("连接失败", f"无法连接到设备 {ip_address}。\n请检查IP地址和设备状态后重试。")
 
     def disconnect_device(self):
-        self.controller.disconnect_instrument()
-        self.status_label.config(text="状态: 未连接", foreground="red")
-        self.device_id_label.config(text="设备号: N/A")
-        self.connect_button.config(state="normal")
-        self.disconnect_button.config(state="disabled")
+        self.controller.disconnect_instrument();
+        self.status_label.config(text="状态: 未连接", foreground="red");
+        self.device_id_label.config(text="设备号: N/A");
+        self.connect_button.config(state="normal");
+        self.disconnect_button.config(state="disabled");
         self.next_button.config(state="disabled")
 
 
-# --- 2. 预设置参数界面 (修复Bug) ---
+# --- 2. 预设置参数界面 ---
 class SettingsFrame(ttk.Frame):
     def __init__(self, parent, controller):
         super().__init__(parent)
@@ -122,7 +137,7 @@ class SettingsFrame(ttk.Frame):
             side="left", padx=10)
         ttk.Button(button_frame, text="Back to Test", command=lambda: self.controller.show_frame("RunningFrame")).pack(side="left", padx=10)
 
-    def clear_info(self):  # ... 无修改 ...
+    def clear_info(self):  # ... 修改 ...
         for widget in self.entries.values():
             if isinstance(widget, ttk.Entry):
                 widget.delete(0, tk.END)
@@ -274,7 +289,7 @@ class RunningFrame(ttk.Frame):
         self.ax.set_xlabel("Time (seconds)")
         self.ax.set_ylabel("Temperature (°C)")
 
-        # --- Bug修复：通过控制器调用 ---
+        # --- 通过控制器调用 ---
         channels_to_plot = kwargs.get('channels_to_plot',
                                       self.controller.parse_channel_selection(self.plot_channels_entry.get()))
 
@@ -299,7 +314,7 @@ class RunningFrame(ttk.Frame):
         self.canvas.draw()
 
     def update_ui(self, temps, max_temps):
-        # ... (与之前版本相同) ...
+        # 与之前版本相同
         if temps is None: return
         channel_configs = self.controller.get_channel_configs()
         for i in range(160):
@@ -318,7 +333,7 @@ class RunningFrame(ttk.Frame):
         self.redraw_historical_plot(title="Live Temperature View", start_time="", end_time="")
 
     def proceed_to_report(self):
-        # ... (与之前版本相同) ...
+        # 与之前版本相同
         notes = {'phenomena': self.phenomena_text.get("1.0", tk.END).strip(),
                  'notes': self.notes_text.get("1.0", tk.END).strip()}
         channels_str = self.plot_channels_entry.get()
@@ -326,11 +341,12 @@ class RunningFrame(ttk.Frame):
         self.controller.prepare_for_report(notes, channels_str, time_range)
         self.controller.show_frame("SettingsFrame")
 
+    #废弃代码：Save Data
     """
     def save_data(self):
         if openpyxl is None: messagebox.showerror("Error", "Excel export requires 'openpyxl'."); return
 
-        # --- Bug修复：通过控制器调用 ---
+        # --- 通过控制器调用 ---
         channels_to_export = self.controller.parse_channel_selection(self.plot_channels_entry.get())
         if not channels_to_export: messagebox.showwarning("Warning", "Please specify channels to export."); return
 

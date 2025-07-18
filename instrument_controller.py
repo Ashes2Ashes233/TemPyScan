@@ -5,9 +5,8 @@ import pyvisa
 import pyvisa_py
 import numpy as np
 
-# --- 您的仿真器代码，保持不变 ---
+# --- 仿真器代码 ---
 class FakeKeithley2701:
-    # (这部分代码保持您原来的样子即可)
     def __init__(self, address):
         self.address = address
         self.connected = False
@@ -41,7 +40,7 @@ class FakeKeithley2701:
         print("模拟设备：连接已断开。")
 
 
-# --- 这是真实设备控制器 ---
+# --- 真实设备控制器 ---
 class Keithley2701Controller:
     def __init__(self, address):
         # 恢复原始的、正确的SOCKET连接地址格式
@@ -55,7 +54,7 @@ class Keithley2701Controller:
 
     def connect(self):
         """
-        建立与设备的连接，并修复逻辑漏洞。
+        建立与设备的连接
         """
         try:
             print(f"正在尝试以SOCKET模式连接到: {self.address}")
@@ -64,18 +63,18 @@ class Keithley2701Controller:
             # 设置通信参数
             self.instrument.read_termination = '\n'
             self.instrument.write_termination = '\n'
-            self.instrument.timeout = 5000  # 5秒判定超时
+            self.instrument.timeout = 10000  # 10秒判定超时
 
             # 给予设备响应时间
             time.sleep(0.2)
 
-            # 现在，直接发送验证指令。query方法内部的逻辑已被修正。
+            # 直接发送验证指令。query方法内部的逻辑已被修正。
             print("连接已建立，正在验证设备身份...")
             idn = self.query('*IDN?')
             print(f"收到设备ID: {idn}")
 
             if 'KEITHLEY' in idn.upper() and '2701' in idn:
-                # --- 关键修正：只有在验证成功后，才将状态设为True ---
+                # --- 只有在验证成功后，才将状态设为True ---
                 self.connected = True
                 print("设备验证成功，连接已就绪。")
                 return True
@@ -100,12 +99,13 @@ class Keithley2701Controller:
             raise ConnectionError("仪器未连接，无法发送指令")
         try:
             self.instrument.write(command)
+            time.sleep(0.2)
         except pyvisa.errors.VisaIOError as e:
             print(f"指令 '{command}' 写入失败: {e}")
             self.connected = False  # 更新状态
             raise  # 重新抛出异常，让上层知道操作失败
 
-    def init_temperature_scan(self, thermocouple_type='K', nplc=1):
+    def init_temperature_scan(self, thermocouple_type='K', nplc=5):
         """
         初始化仪器进行多通道温度扫描
         配置仪器进行80个通道的热电偶温度测量
@@ -116,27 +116,23 @@ class Keithley2701Controller:
 
         print("\n开始配置温度扫描参数...")
         try:
-            #self.write('*RST')  # 重置仪器
-            #self.write('*CLS')  # 清除状态
 
-            # 配置扫描列表中的所有通道的测量功能
+            self.instrument.write('*CLS') #重置状态
             self.write(f"ROUT:SCAN {self.scan_list}")
-            self.write("SENS:FUNC 'TEMP'")
-            self.write("SENS:TEMP:TRAN TC")
-            self.write(f"SENS:TEMP:TC:TYPE {thermocouple_type.upper()}")
+            self.write(f"SENS:TEMP:TRAN TC {self.scan_list}")
+            self.write(f"SENS:TC:TYPE K {self.scan_list}")
+            self.write(f"SENS:FUNC 'TEMP' {self.scan_list}")
             self.write("SENS:UNIT:TEMP C")
-            self.write(f"SENS:TEMP:NPLC {nplc}")
+            self.write(f"SENS:TEMP:NPLC {nplc}") #设置积分时间
 
-
-            # 配置触发系统
-            self.write("TRAC CLE")
+            self.write("TRAC:CLE")
             self.write("TRIG:SOUR IMM")
             self.write("SAMP:COUN 80")
             self.write("ROUT:SCAN:TSO IMM")
             self.write("INIT:CONT OFF")
             self.write("FORM:ELEM READ")
-            self.write("TRIG:COUN 1")  # 每次触发扫描一次
-
+            self.write("TRIG:COUN 1")
+            self.write("SENS:TC:CJON:STATE ON")
 
             print(f"配置完成：扫描列表 {self.scan_list}")
             print(f"测量参数：{thermocouple_type}型热电偶, 摄氏度, NPLC={nplc}")
@@ -177,7 +173,7 @@ class Keithley2701Controller:
             return  real_temp
             #return ','.join([f'{temp:.4f}' for temp in temperatures])
         else:
-            return ""
+            return []
 
 
     def close(self):
