@@ -122,7 +122,7 @@ class SettingsFrame(ttk.Frame):
                 widget.insert(0, default_value)
             elif widget_type == "Combobox":
                 widget = ttk.Combobox(frame, values=default_value, width=38)
-                # --- Bug修复：这行代码现在只对Combobox生效 ---
+                # --- 这行代码现在只对Combobox生效 ---
                 if default_value:
                     widget.current(0)
             elif widget_type == "Text":
@@ -177,7 +177,7 @@ class RunningFrame(ttk.Frame):
         self.stop_button.pack(side="left", padx=5)
         ttk.Label(control_frame, text="读取间隔/s(不包含扫描时间):").pack(side="left", padx=(10, 0))
         self.interval_entry = ttk.Entry(control_frame, width=5)
-        self.interval_entry.insert(0, "10")
+        self.interval_entry.insert(0, "2")
         self.interval_entry.pack(side="left", padx=5)
         table_frame = ttk.Frame(left_frame)
         table_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)

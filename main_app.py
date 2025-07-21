@@ -60,6 +60,7 @@ class ThermoApp(tk.Tk):
         self.report_notes = {}
         self.report_channels_str = ""
         self.report_time_range = {}
+        self.init = False
         container = ttk.Frame(self)
         container.pack(side="top", fill="both", expand=True)
         container.grid_rowconfigure(0, weight=1)
@@ -195,18 +196,21 @@ class ThermoApp(tk.Tk):
         self.data_thread = threading.Thread(target=self._data_acquisition_loop, args=(interval,), daemon=True)
         self.data_thread.start()
         self.instrument.init_temperature_scan()
+        self.init = True
 
     def stop_data_acquisition(self):
         self.is_running = False
         self.stop_thread.set()
         self.stop_time = datetime.now()
         self.stop_timestamp = time.time()
+        self.init = False
 
     def _data_acquisition_loop(self, interval):
         while not self.stop_thread.is_set():
-            if self.instrument and self.instrument.connected:
+            if self.instrument and self.instrument.connected and self.init == True:
                 try:
                     read_time = time.time()
+                    print('1')
                     raw_data = self.instrument.get_data('READ?')
                     if raw_data:
                         # 对于开路等无效读数，仪器会返回如 "+9.910000E+37" 这样的字符串，这部分在get_data已经滤除
@@ -216,6 +220,7 @@ class ThermoApp(tk.Tk):
                         temps_160ch = np.full(160, np.nan)
                         temps_160ch[self.channel_offset: self.channel_offset + 80] = temps_80ch
                         self.data_queue.put((read_time, temps_160ch))
+                    #time.sleep(0.1)
                 except Exception as e:
                     print(f"数据读取错误: {e}")
             time.sleep(interval)

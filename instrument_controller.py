@@ -63,7 +63,7 @@ class Keithley2701Controller:
             # 设置通信参数
             self.instrument.read_termination = '\n'
             self.instrument.write_termination = '\n'
-            self.instrument.timeout = 10000  # 10秒判定超时
+            self.instrument.timeout = 20000  # 20秒判定超时
 
             # 给予设备响应时间
             time.sleep(0.2)
@@ -99,7 +99,7 @@ class Keithley2701Controller:
             raise ConnectionError("仪器未连接，无法发送指令")
         try:
             self.instrument.write(command)
-            time.sleep(0.2)
+            time.sleep(0.05)
         except pyvisa.errors.VisaIOError as e:
             print(f"指令 '{command}' 写入失败: {e}")
             self.connected = False  # 更新状态
@@ -116,15 +116,22 @@ class Keithley2701Controller:
 
         print("\n开始配置温度扫描参数...")
         try:
-
-            self.instrument.write('*CLS') #重置状态
+            self.write('*CLS')  # 清除状态
+            # 1. 设置扫描列表
             self.write(f"ROUT:SCAN {self.scan_list}")
-            self.write(f"SENS:TEMP:TRAN TC {self.scan_list}")
-            self.write(f"SENS:TC:TYPE K {self.scan_list}")
-            self.write(f"SENS:FUNC 'TEMP' {self.scan_list}")
-            self.write("SENS:UNIT:TEMP C")
-            self.write(f"SENS:TEMP:NPLC {nplc}") #设置积分时间
 
+            # 2. 配置全局参数
+            self.write(f"SENS:FUNC 'TEMP', {self.scan_list}")
+            self.write(f"SENS:TEMP:NPLC {nplc}")  # 设置积分时间
+
+            # 3. 配置通道级参数
+            self.write(f"SENS:TEMP:TRAN TC, {self.scan_list}")
+            self.write(f"SENS:TC:TYPE {thermocouple_type}, {self.scan_list}")
+            self.write(f"SENS:TC:CJON:STATE ON, {self.scan_list}")
+            self.write(f"SENS:TEMP:UNIT C, {self.scan_list}")
+
+
+            # 4. 配置触发和采样
             self.write("TRAC:CLE")
             self.write("TRIG:SOUR IMM")
             self.write("SAMP:COUN 80")
@@ -132,8 +139,15 @@ class Keithley2701Controller:
             self.write("INIT:CONT OFF")
             self.write("FORM:ELEM READ")
             self.write("TRIG:COUN 1")
-            self.write("SENS:TC:CJON:STATE ON")
 
+            # 添加同步点确保配置完成
+            #self.query("*OPC?")
+
+            # 正确查询通道配置（添加空格）
+            print("测量函数:", self.query("SENS:FUNC? (@101)"))
+            #print("通道101的热电偶类型:", self.query("SENS:TC:TYPE? (@101)"))  # 应返回 "K"
+            #print("当前扫描列表:", self.query("ROUT:SCAN?"))  # 应返回您的扫描列表
+            # 查询扫描列表
             print(f"配置完成：扫描列表 {self.scan_list}")
             print(f"测量参数：{thermocouple_type}型热电偶, 摄氏度, NPLC={nplc}")
             print("初始化成功，已准备好采集温度数据。")
@@ -164,7 +178,7 @@ class Keithley2701Controller:
             """
             这里需要说明一下，由于80个通道扫描耗时较高，最终获得的数据间隔可能与设置的不一致
             """
-            #print(temperatures)
+            print(temperatures)
             for temp in temperatures:
                 if 1000000 > temp:
                     real_temp.append(float(temp))
