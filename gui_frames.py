@@ -1,4 +1,4 @@
-# gui_frames.py (已修正)
+# gui_frames.py (已添加Y轴范围功能)
 
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext, filedialog
@@ -28,27 +28,27 @@ class ConnectionFrame(ttk.Frame):
         self.device_type_var = tk.StringVar(value="1-80")
         self.columnconfigure(0, weight=1);
         self.columnconfigure(2, weight=1)
-        ttk.Label(self, text="设备TCP/IP地址:", font=("Helvetica", 12)).grid(row=0, column=1, pady=(20, 5))
+        ttk.Label(self, text="Instrument TCP/IP Address:", font=("Helvetica", 12)).grid(row=0, column=1, pady=(20, 5))
         self.ip_entry = ttk.Entry(self, width=30)
         self.ip_entry.insert(0, "192.168.1.100")
         self.ip_entry.grid(row=1, column=1, pady=5, ipady=4)
         device_selector_frame = ttk.Frame(self)
         device_selector_frame.grid(row=2, column=1, pady=5)
-        ttk.Label(device_selector_frame, text="通道范围:").pack(side="left", padx=5)
+        ttk.Label(device_selector_frame, text="Channel Range:").pack(side="left", padx=5)
         ttk.Radiobutton(device_selector_frame, text="1-80", variable=self.device_type_var, value="1-80").pack(
             side="left")
         ttk.Radiobutton(device_selector_frame, text="81-160", variable=self.device_type_var, value="81-160").pack(
             side="left")
         button_frame = ttk.Frame(self)
         button_frame.grid(row=3, column=1, pady=10)
-        self.connect_button = ttk.Button(button_frame, text="连接", command=self.connect_device)
+        self.connect_button = ttk.Button(button_frame, text="Connect", command=self.connect_device)
         self.connect_button.pack(side="left", padx=5)
-        self.disconnect_button = ttk.Button(button_frame, text="断开连接", command=self.disconnect_device,
+        self.disconnect_button = ttk.Button(button_frame, text="Disable Connect", command=self.disconnect_device,
                                             state="disabled")
         self.disconnect_button.pack(side="left", padx=5)
-        self.status_label = ttk.Label(self, text="状态: 未连接", foreground="red")
+        self.status_label = ttk.Label(self, text="Status: Not Connected", foreground="red")
         self.status_label.grid(row=4, column=1, pady=5)
-        self.device_id_label = ttk.Label(self, text="设备号: N/A")
+        self.device_id_label = ttk.Label(self, text="Instrument: N/A")
         self.device_id_label.grid(row=5, column=1, pady=5)
         self.next_button = ttk.Button(self, text="Continue to Test", state="disabled",
                                       command=lambda: controller.show_frame("RunningFrame"))
@@ -73,22 +73,23 @@ class ConnectionFrame(ttk.Frame):
     def connect_device(self):
         ip_address = self.ip_entry.get();
         device_type = self.device_type_var.get()
-        if not ip_address: messagebox.showerror("错误", "请输入IP地址"); return
+        if not ip_address: messagebox.showerror("Error", "No IP Address"); return
         if self.controller.connect_instrument(ip_address, device_type):
-            self.status_label.config(text="状态: 已连接", foreground="green");
-            self.device_id_label.config(text=f"设备号: {self.controller.get_device_id()}");
-            self.connect_button.config(state="disabled");
-            self.disconnect_button.config(state="normal");
+            self.status_label.config(text="Status: Connected", foreground="green")
+            self.device_id_label.config(text=f"Instrument: {self.controller.get_device_id()}")
+            self.connect_button.config(state="disabled")
+            self.disconnect_button.config(state="normal")
             self.next_button.config(state="normal")
         else:
-            self.status_label.config(text="状态: 连接失败", foreground="red");
-            self.device_id_label.config(text="设备号: N/A");
-            messagebox.showerror("连接失败", f"无法连接到设备 {ip_address}。\n请检查IP地址和设备状态后重试。")
+            self.status_label.config(text="Status: Connection Failed", foreground="red");
+            self.device_id_label.config(text="Instrument: N/A")
+            messagebox.showerror("Connection Failed",
+                                 f"Cannot connect {ip_address}。\nPlease check IP address or instrument.")
 
     def disconnect_device(self):
         self.controller.disconnect_instrument();
-        self.status_label.config(text="状态: 未连接", foreground="red");
-        self.device_id_label.config(text="设备号: N/A");
+        self.status_label.config(text="Status: Not Connected", foreground="red");
+        self.device_id_label.config(text="Instrument: N/A");
         self.connect_button.config(state="normal");
         self.disconnect_button.config(state="disabled");
         self.next_button.config(state="disabled")
@@ -135,7 +136,8 @@ class SettingsFrame(ttk.Frame):
         ttk.Button(button_frame, text="Clear Info", command=self.clear_info).pack(side="left", padx=10)
         ttk.Button(button_frame, text="Generate Report & Data Table", command=self.confirm_and_generate_report).pack(
             side="left", padx=10)
-        ttk.Button(button_frame, text="Back to Test", command=lambda: self.controller.show_frame("RunningFrame")).pack(side="left", padx=10)
+        ttk.Button(button_frame, text="Back to Test", command=lambda: self.controller.show_frame("RunningFrame")).pack(
+            side="left", padx=10)
 
     def clear_info(self):  # ... 修改 ...
         for widget in self.entries.values():
@@ -169,13 +171,13 @@ class RunningFrame(ttk.Frame):
         main_pane.add(left_frame, weight=2)
         control_frame = ttk.Frame(left_frame)
         control_frame.pack(fill=tk.X, pady=5, padx=5)
-        #ttk.Button(control_frame, text="< Back to Settings",
+        # ttk.Button(control_frame, text="< Back to Settings",
         #           command=lambda: self.controller.show_frame("SettingsFrame")).pack(side="left", padx=5)
         self.start_button = ttk.Button(control_frame, text="Start", command=self.start_test)
         self.start_button.pack(side="left", padx=5)
         self.stop_button = ttk.Button(control_frame, text="Stop", command=self.stop_test, state="disabled")
         self.stop_button.pack(side="left", padx=5)
-        ttk.Label(control_frame, text="读取间隔/s(不包含扫描时间):").pack(side="left", padx=(10, 0))
+        ttk.Label(control_frame, text="Cycle/s(Scan time not included:").pack(side="left", padx=(10, 0))
         self.interval_entry = ttk.Entry(control_frame, width=5)
         self.interval_entry.insert(0, "2")
         self.interval_entry.pack(side="left", padx=5)
@@ -222,6 +224,18 @@ class RunningFrame(ttk.Frame):
         self.end_time_entry.pack(side=tk.LEFT)
         self.update_plot_button = ttk.Button(time_frame, text="Update Plot", command=self.redraw_historical_plot)
         self.update_plot_button.pack(side=tk.RIGHT, padx=5)
+
+        # 添加Y轴范围设置
+        y_frame = ttk.Frame(plot_frame)
+        y_frame.pack(fill=tk.X, pady=(2, 5))
+        ttk.Label(y_frame, text="Y Range (°C):").pack(side=tk.LEFT, padx=5)
+        ttk.Label(y_frame, text="Min:").pack(side=tk.LEFT)
+        self.y_min_entry = ttk.Entry(y_frame, width=8)
+        self.y_min_entry.pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(y_frame, text="Max:").pack(side=tk.LEFT)
+        self.y_max_entry = ttk.Entry(y_frame, width=8)
+        self.y_max_entry.pack(side=tk.LEFT)
+
         report_build_frame = ttk.Frame(right_pane)
         right_pane.add(report_build_frame, weight=1)
         report_info_frame = ttk.LabelFrame(report_build_frame, text="Report Notes")
@@ -237,8 +251,8 @@ class RunningFrame(ttk.Frame):
         report_info_frame.rowconfigure(1, weight=1)
         export_button_frame = ttk.Frame(report_build_frame)
         export_button_frame.pack(pady=10)
-        #self.save_data_button = ttk.Button(export_button_frame, text="Save Data", command=self.save_data);
-        #self.save_data_button.pack(side="left", padx=10)
+        # self.save_data_button = ttk.Button(export_button_frame, text="Save Data", command=self.save_data);
+        # self.save_data_button.pack(side="left", padx=10)
         self.create_report_button = ttk.Button(export_button_frame, text="Proceed to Report Settings",
                                                command=self.proceed_to_report)
         self.create_report_button.pack(side="left", padx=10)
@@ -310,6 +324,20 @@ class RunningFrame(ttk.Frame):
                 elapsed_time = [ts - slice_start_ts for ts in timestamps]
                 self.ax.plot(elapsed_time, temps_y, label=f"Ch {i + 1}", color=colors[i % len(colors)])
                 plotted_something = True
+
+        # 添加Y轴范围设置
+        y_min = kwargs.get('y_min', self.y_min_entry.get())
+        y_max = kwargs.get('y_max', self.y_max_entry.get())
+
+        try:
+            if y_min and y_min.strip() != '':
+                self.ax.set_ylim(bottom=float(y_min))
+            if y_max and y_max.strip() != '':
+                self.ax.set_ylim(top=float(y_max))
+        except ValueError:
+            # 忽略无效输入
+            pass
+
         if plotted_something: self.ax.legend(loc='upper left', fontsize='small')
         self.canvas.draw()
 
@@ -328,9 +356,10 @@ class RunningFrame(ttk.Frame):
             max_temp_str = f"{max_temp_val:.2f}" if not np.isinf(max_temp_val) else "N/A"
             tag = 'over_threshold' if temp > threshold else ''
             self.tree.item(i, values=(
-            i + 1, channel_configs[i]['location'], f"{temp:.2f}", max_temp_str, channel_configs[i]['threshold']),
+                i + 1, channel_configs[i]['location'], f"{temp:.2f}", max_temp_str, channel_configs[i]['threshold']),
                            tags=(tag,))
-        self.redraw_historical_plot(title="Live Temperature View", start_time="", end_time="")
+        self.redraw_historical_plot(title="Live Temperature View", start_time="", end_time="",
+                                    y_min=self.y_min_entry.get(), y_max=self.y_max_entry.get())
 
     def proceed_to_report(self):
         # 与之前版本相同
@@ -341,7 +370,7 @@ class RunningFrame(ttk.Frame):
         self.controller.prepare_for_report(notes, channels_str, time_range)
         self.controller.show_frame("SettingsFrame")
 
-    #废弃代码：Save Data
+    # 废弃代码：Save Data
     """
     def save_data(self):
         if openpyxl is None: messagebox.showerror("Error", "Excel export requires 'openpyxl'."); return

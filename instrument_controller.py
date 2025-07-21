@@ -1,4 +1,4 @@
-# instrument_controller.py (最终修正版)
+# instrument_controller.py
 
 import time
 import pyvisa
@@ -178,7 +178,7 @@ class Keithley2701Controller:
             """
             这里需要说明一下，由于80个通道扫描耗时较高，最终获得的数据间隔可能与设置的不一致
             """
-            print(temperatures)
+            #print(temperatures)
             for temp in temperatures:
                 if 1000000 > temp:
                     real_temp.append(float(temp))

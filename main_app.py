@@ -1,4 +1,4 @@
-# main_app.py
+# main_app.py (已添加P/F显示N/A功能)
 
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext, filedialog
@@ -9,12 +9,13 @@ import numpy as np
 from datetime import datetime
 from collections import deque
 from gui_frames import ConnectionFrame, SettingsFrame, RunningFrame
-#from instrument_controller import FakeKeithley2701 as InstrumentController
+# from instrument_controller import FakeKeithley2701 as InstrumentController
 from instrument_controller import Keithley2701Controller as InstrumentController
 from report_generator import generate_pdf_report
 import os
 import re  # 导入 re 模块
 import openpyxl
+
 
 # --- 辅助函数,使用正则表达式解析选择的通道号 ---
 def parse_channel_selection(text):
@@ -89,7 +90,7 @@ class ThermoApp(tk.Tk):
                                                                                  "No data found for the selected channels and time range."); return
 
         filepath_pdf = filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF Documents", "*.pdf")],
-                                                title="Save Report As")
+                                                    title="Save Report As")
         if not filepath_pdf: return
 
         filepath_excel = os.path.splitext(filepath_pdf)[0] + '.xlsx'
@@ -102,9 +103,17 @@ class ThermoApp(tk.Tk):
             for i in range(0, len(valid_channels_for_report), 8):
                 channel_group = valid_channels_for_report[i: i + 8]
                 group_title = f"Channels: {channel_group[0] + 1} to {channel_group[-1] + 1}"
-                running_frame.redraw_historical_plot(channels_to_plot=channel_group, title=group_title,
-                                                     start_time=self.report_time_range.get('start'),
-                                                     end_time=self.report_time_range.get('end'))
+
+                # 添加Y轴范围参数
+                running_frame.redraw_historical_plot(
+                    channels_to_plot=channel_group,
+                    title=group_title,
+                    start_time=self.report_time_range.get('start'),
+                    end_time=self.report_time_range.get('end'),
+                    y_min=running_frame.y_min_entry.get(),
+                    y_max=running_frame.y_max_entry.get()
+                )
+
                 group_path = f"temp_report_group_{i}.png"
                 self.frames['RunningFrame'].fig.savefig(group_path, dpi=300)
                 temp_image_files.append(group_path)
@@ -115,25 +124,35 @@ class ThermoApp(tk.Tk):
             # 修复键名映射问题
             report_data['Phenomena And Result'] = self.report_notes.get('phenomena', '')
             report_data['Notes'] = self.report_notes.get('notes', '')
-            #report_data.update(self.report_notes)
-            print(self.report_time_range.get('start'))
-            #report_data['Start time'] = self.start_time.strftime('%Y-%m-%d %H:%M:%S');
-            #report_data['Stop time'] = self.stop_time.strftime('%Y-%m-%d %H:%M:%S') if self.stop_time else "Running"
-            report_data['Start time'] = time.asctime(time.localtime(self.start_timestamp + float(self.report_time_range.get('start'))))
-            report_data['Stop time'] = time.asctime(time.localtime((self.start_timestamp + float(self.report_time_range.get('end')))))
+            # report_data.update(self.report_notes)
+            # report_data['Start time'] = self.start_time.strftime('%Y-%m-%d %H:%M:%S');
+            # report_data['Stop time'] = self.stop_time.strftime('%Y-%m-%d %H:%M:%S') if self.stop_time else "Running"
+            report_data['Start time'] = time.asctime(
+                time.localtime(self.start_timestamp + float(self.report_time_range.get('start'))))
+            report_data['Stop time'] = time.asctime(
+                time.localtime((self.start_timestamp + float(self.report_time_range.get('end')))))
 
             table_data = []
             sliced_max_temps = sliced_data['max_temps']
             for i, ch_index in enumerate(valid_channels_for_report):
                 config = self.channel_configs[ch_index]
                 max_temp = sliced_max_temps[ch_index]
-                try:
-                    threshold_val = float(config['threshold'])
-                except (ValueError, KeyError):
-                    threshold_val = float('inf')
-                status = "F" if max_temp > threshold_val else "P"
+
+                # 处理未设置阈值的情况
+                threshold_str = config['threshold'].strip()
+                if threshold_str == '':
+                    status = "N/A"
+                else:
+                    try:
+                        threshold_val = float(threshold_str)
+                        status = "F" if max_temp > threshold_val else "P"
+                    except ValueError:
+                        status = "N/A"  # 如果阈值不是有效数字，也显示N/A
+
                 table_data.append(
-                    [str(i + 1), config['location'], str(ch_index + 1), f"{max_temp:.2f}", config['threshold'], status])
+                    [str(i + 1), config['location'], str(ch_index + 1),
+                     f"{max_temp:.2f}", config['threshold'], status])
+
             report_data['test_data'] = table_data
 
             success_pdf = generate_pdf_report(filepath_pdf, report_data, plot_data_for_report)
@@ -155,11 +174,11 @@ class ThermoApp(tk.Tk):
 
             # --- 统一的保存成功/失败消息 ---
             if success_pdf and success_excel:
-                messagebox.showinfo("成功", f"报告和数据已成功保存到:\n{filepath_pdf}\n{filepath_excel}")
+                messagebox.showinfo("Success", f"Report and data saved to:\n{filepath_pdf}\n{filepath_excel}")
             elif success_pdf:
-                messagebox.showwarning("部分成功", f"报告已成功保存, 但Excel数据保存失败。\nPDF: {filepath_pdf}")
+                messagebox.showwarning("Partly success", f"Report saved, data saving error.\nPDF: {filepath_pdf}")
             else:
-                messagebox.showerror("失败", "生成报告和数据时发生错误。")
+                messagebox.showerror("Failed", "An error occurred.")
         finally:
             for img_path in temp_image_files:
                 if os.path.exists(img_path): os.remove(img_path)
@@ -210,17 +229,17 @@ class ThermoApp(tk.Tk):
             if self.instrument and self.instrument.connected and self.init == True:
                 try:
                     read_time = time.time()
-                    print('1')
+                    #print('1')
                     raw_data = self.instrument.get_data('READ?')
                     if raw_data:
                         # 对于开路等无效读数，仪器会返回如 "+9.910000E+37" 这样的字符串，这部分在get_data已经滤除
                         temps_80ch = np.array([t for t in raw_data])
-                    #temps_80ch = np.array([float(t) for t in raw_data.split(',')])
+                    # temps_80ch = np.array([float(t) for t in raw_data.split(',')])
                     if len(temps_80ch) == 80:
                         temps_160ch = np.full(160, np.nan)
                         temps_160ch[self.channel_offset: self.channel_offset + 80] = temps_80ch
                         self.data_queue.put((read_time, temps_160ch))
-                    #time.sleep(0.1)
+                    # time.sleep(0.1)
                 except Exception as e:
                     print(f"数据读取错误: {e}")
             time.sleep(interval)
