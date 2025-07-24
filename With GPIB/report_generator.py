@@ -41,7 +41,6 @@ def generate_pdf_report(path, report_data, plot_data_list):
          Paragraph(report_data.get('Operating Frequency', ''), styles['Normal'])],
         [Paragraph('Operating Duration:', styles['Normal']),
          Paragraph(report_data.get('Operating Duration', ''), styles['Normal'])],
-        [Paragraph('Test Date:', styles['Normal']), Paragraph(report_data.get('Test Date', ''), styles['Normal'])],
         [Paragraph('Start time:', styles['Normal']), Paragraph(report_data.get('Start time', ''), styles['Normal'])],
         [Paragraph('Stop time:', styles['Normal']), Paragraph(report_data.get('Stop time', ''), styles['Normal'])],
         [Paragraph('Ambient Channel:', styles['Normal']),

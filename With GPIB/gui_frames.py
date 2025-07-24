@@ -84,8 +84,8 @@ class ConnectionFrame(ttk.Frame):
             self.address_label.config(text="IP Address:")
             self.address_entry.insert(0, "192.168.1.100")
         elif "GPIB" in selection:
-            self.address_label.config(text="GPIB Address (e.g., 16):")
-            self.address_entry.insert(0, "16")
+            self.address_label.config(text="GPIB Address (e.g., 22):")
+            self.address_entry.insert(0, "22")
 
     def open_github_link(self):
         url = "https://github.com/Ashes2Ashes233/TemPyScan"
@@ -136,14 +136,14 @@ class SettingsFrame(ttk.Frame):
         ttk.Label(self, text="Report Configuration", font=("Helvetica", 16, "bold")).pack(pady=10)
         fields = [
             ("Test type", "Combobox", ["Normal", "Abnormal"]), ("Test name", "Entry", ""),
-            ("Operating Voltage", "Entry", "5V"), ("Operating Frequency", "Entry", "50Hz"),
-            ("Operating Duration", "Entry", "3600s"),
-            ("Rating Voltage", "Entry", "5V"), ("Rating Frequency", "Entry", "50Hz"),
-            ("Ambient Channel", "Entry", "1"),
-            ("Temperature contrast with limit", "Entry", "50"), ("Lab request", "Entry", ""),
+            ("Operating Voltage", "Entry", ""), ("Operating Frequency", "Entry", ""),
+            ("Operating Duration", "Entry", ""),
+            ("Rating Voltage", "Entry", ""), ("Rating Frequency", "Entry", ""),
+            ("Ambient Channel", "Entry", ""),
+            ("Temperature contrast with limit", "Entry", ""), ("Lab request", "Entry", ""),
             ("Sample number", "Entry", ""), ("Model number", "Entry", ""),
             ("Sample Characteristics", "Text", ""), ("Tester", "Entry", ""),
-            ("Equipment", "Entry", "Keithley 2701, Power Supply XYZ"),
+            ("Equipment", "Entry", ""),
         ]
         for i, (label_text, widget_type, default_value) in enumerate(fields):
             label = ttk.Label(frame, text=label_text + ":")
@@ -201,6 +201,7 @@ class RunningFrame(ttk.Frame):
         main_pane.add(left_frame, weight=2)
         control_frame = ttk.Frame(left_frame)
         control_frame.pack(fill=tk.X, pady=5, padx=5)
+
         self.start_button = ttk.Button(control_frame, text="Start", command=self.start_test)
         self.start_button.pack(side="left", padx=5)
         self.stop_button = ttk.Button(control_frame, text="Stop", command=self.stop_test, state="disabled")
@@ -209,6 +210,13 @@ class RunningFrame(ttk.Frame):
         self.interval_entry = ttk.Entry(control_frame, width=5)
         self.interval_entry.insert(0, "2")
         self.interval_entry.pack(side="left", padx=5)
+        # 添加环境通道设置
+        ambient_frame = ttk.Frame(control_frame)
+        ambient_frame.pack(side="left", padx=(10, 0))
+        ttk.Label(ambient_frame, text="Ambient Channel:").pack(side="left")
+        self.ambient_channel_entry = ttk.Entry(ambient_frame, width=5)
+        self.ambient_channel_entry.pack(side="left", padx=5)
+        self.ambient_channel_entry.insert(0, "0")  # 默认值
         table_frame = ttk.Frame(left_frame)
         table_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         cols = ("Channel", "Location", "Current Temp (°C)", "Max Temp (°C)", "Threshold (°C)")
@@ -281,11 +289,21 @@ class RunningFrame(ttk.Frame):
         self.create_report_button.pack(side="left", padx=10)
 
     def start_test(self):
+        # 获取环境通道设置
+        ambient_channel = self.ambient_channel_entry.get().strip()
+
+        # 清除树状视图
         self.tree.delete(*self.tree.get_children())
         configs = self.controller.get_channel_configs()
         for i, config in enumerate(configs):
             self.tree.insert("", "end", iid=i, values=(i + 1, config['location'], "N/A", "N/A", config['threshold']))
-        self.controller.start_data_acquisition(int(self.interval_entry.get()))
+
+        # 启动数据采集，传递环境通道设置
+        self.controller.start_data_acquisition(
+            int(self.interval_entry.get()),
+            ambient_channel
+        )
+
         self.start_button.config(state="disabled")
         self.stop_button.config(state="normal")
 

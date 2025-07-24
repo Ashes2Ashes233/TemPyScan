@@ -219,7 +219,7 @@ class KeithleyController:
         if command.upper().startswith(('READ?', 'FETC?')):
             real_temp=[]
             temperatures = self.instrument.query_ascii_values('READ?', container=list)  # 直接获取列表
-            print(temperatures)
+            #print(temperatures)
             #self.write("ROUT:SCAN:LSEL NONE") #扫描关闭
             """
             这里需要说明一下，由于80个通道扫描耗时较高，最终获得的数据间隔可能与设置的不一致

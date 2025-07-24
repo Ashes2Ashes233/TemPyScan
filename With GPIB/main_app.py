@@ -45,7 +45,7 @@ class ThermoApp(tk.Tk):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.title("TemPyScan")
-        self.geometry("1300x800")
+        # ... (其它属性不变) ...
         self.instrument = None
         self.settings = {}
         self.data_queue = queue.Queue()
@@ -54,18 +54,22 @@ class ThermoApp(tk.Tk):
         self.is_running = False
         self.channel_offset = 0
         self.max_temps = np.full(160, -np.inf)
-        self.history = {i: deque(maxlen=200) for i in range(160)}
+
+        # --- 核心改动 1：移除 maxlen 限制，以保存所有数据 ---
+        self.history = {i: deque() for i in range(160)}
+
         self.start_time = None
         self.stop_time = None
         self.start_timestamp = 0
+        # ... (其余 __init__ 代码不变) ...
         self.channel_configs = [{'location': '', 'threshold': ''} for i in range(160)]
         self.report_notes = {}
         self.report_channels_str = ""
         self.report_time_range = {}
         self.init = False
-        self.ambient_channel = None  # 存储环境通道号
-        self.ambient_start_temp = "N/A"  # 环境通道开始温度
-        self.ambient_end_temp = "N/A"  # 环境通道结束温度
+        self.ambient_channel = None
+        self.ambient_start_temp = "N/A"
+        self.ambient_end_temp = "N/A"
         container = ttk.Frame(self)
         container.pack(side="top", fill="both", expand=True)
         container.grid_rowconfigure(0, weight=1)
@@ -197,22 +201,42 @@ class ThermoApp(tk.Tk):
         if self.instrument and self.instrument.connected: return self.instrument.query("*IDN?")
         return "N/A"
 
-    def start_data_acquisition(self, interval):
+    def start_data_acquisition(self, interval, ambient_channel_str):
         self.is_running = True
         self.stop_thread.clear()
         self.max_temps.fill(-np.inf)
-        for i in range(160): self.history[i].clear()
+
+        # 清除历史数据
+        for i in range(160):
+            self.history[i].clear()
+
         self.start_time = datetime.now()
         self.start_timestamp = time.time()
         self.stop_time = None
-        self.data_thread = threading.Thread(target=self._data_acquisition_loop, args=(interval,), daemon=True)
+
+        # 设置环境通道
+        try:
+            # 用户输入的是通道号（1-160），转换为索引（0-159）
+            self.ambient_channel = int(ambient_channel_str) - 1
+        except ValueError:
+            self.ambient_channel = None
+        #print(self.ambient_channel)
+        # 重置环境温度记录
+        self.ambient_start_temp = "N/A"
+        self.ambient_end_temp = "N/A"
+
+        # 启动数据采集线程
+        self.data_thread = threading.Thread(
+            target=self._data_acquisition_loop,
+            args=(interval,),
+            daemon=True
+        )
         self.data_thread.start()
+
+        # 初始化仪器
         self.instrument.init_temperature_scan()
         time.sleep(0.1)
         self.init = True
-        # 重置环境通道温度记录
-        self.ambient_start_temp = "N/A"
-        self.ambient_end_temp = "N/A"
 
     def stop_data_acquisition(self):
         self.is_running = False
@@ -220,6 +244,28 @@ class ThermoApp(tk.Tk):
         self.stop_time = datetime.now()
         self.stop_timestamp = time.time()
         self.init = False
+
+        # --- 核心改动 2：测试停止后，检查数据量并提供降采样选项 ---
+        # 寻找一个有数据的通道来判断数据点数量
+        first_active_channel = next((ch for ch, data in self.history.items() if data), None)
+        if first_active_channel is not None:
+            num_points = len(self.history[first_active_channel])
+            # 当数据点过多时（例如超过5000个），提示用户
+            if num_points > 5000:
+                user_choice = messagebox.askyesno(
+                    "High Data Volume",
+                    f"The test recorded {num_points} data points, which may slow down plotting and reporting.\n\n"
+                    "Do you want to downsample the data (keep every 2nd point) to improve performance?",
+                    detail="This will not affect the Max Temp values."
+                )
+                if user_choice:
+                    print("Performing downsampling...")
+                    for i in range(160):
+                        if self.history[i]:
+                            original_deque = self.history[i]
+                            # 每两个点保留一个
+                            self.history[i] = deque(list(original_deque)[::2])
+                    print("Downsampling complete.")
 
     def _data_acquisition_loop(self, interval):
         while not self.stop_thread.is_set():
@@ -254,15 +300,25 @@ class ThermoApp(tk.Tk):
             if not self.data_queue.empty():
                 read_time, temps = self.data_queue.get_nowait()
                 valid_temps_mask = ~np.isnan(temps)
-                self.max_temps[valid_temps_mask] = np.maximum(self.max_temps[valid_temps_mask], temps[valid_temps_mask])
+                self.max_temps[valid_temps_mask] = np.maximum(self.max_temps[valid_temps_mask],
+                                                              temps[valid_temps_mask])
                 for i in range(160):
-                    if not np.isnan(temps[i]): self.history[i].append((read_time, temps[i]))
-                    # 如果是环境通道且是第一个数据点，记录开始温度
-                    if self.ambient_channel is not None and i == self.ambient_channel:
-                        if self.ambient_start_temp == "N/A":
-                            self.ambient_start_temp = f"{temps[i]:.2f}"
-                        # 总是更新结束温度为最后一个值
-                        self.ambient_end_temp = f"{temps[i]:.2f}"
+                    # --- 核心改动：将环境温度的记录逻辑，移动到有效数据的判断之内 ---
+                    if not np.isnan(temps[i]):
+                        self.history[i].append((read_time, temps[i]))
+
+                        # 只有当 temps[i] 是一个有效数字时，才执行这里的逻辑
+                        if self.ambient_channel is not None and i == self.ambient_channel:
+                            # 如果是环境通道且是第一个有效数据点，记录开始温度
+                            if self.ambient_start_temp == "N/A":
+                                print('1')
+                                self.ambient_start_temp = f"{temps[i]:.2f}"
+                                print(self.ambient_start_temp)
+                            # 总是更新结束温度为最后一个有效值
+                            print('2')
+                            self.ambient_end_temp = f"{temps[i]:.2f}"
+                            print(self.ambient_end_temp)
+
                 running_frame = self.frames["RunningFrame"]
                 if self.is_running:
                     running_frame.update_ui(temps, self.max_temps)
@@ -304,28 +360,57 @@ class ThermoApp(tk.Tk):
     def get_sliced_data(self, channels_to_slice, start_str, end_str):
         if self.start_timestamp == 0: return None
         history = self.get_history()
+
+        # 寻找一个在所选通道中且有数据的通道，以确定完整时间轴
         first_channel_with_data = next((ch for ch in channels_to_slice if ch in history and history[ch]), None)
-        if first_channel_with_data is None: return None
-        full_timestamps = [ts for ts, temp in history[first_channel_with_data]]
-        try:
-            start_offset = float(start_str) if start_str else 0
-            end_offset = float(end_str) if end_str else (full_timestamps[-1] - self.start_timestamp)
-        except ValueError:
+
+        # --- 核心改动 3：更健壮的逻辑 ---
+        # 如果所有选中的通道都没有数据，则直接返回None
+        if first_channel_with_data is None:
+            # 进一步检查：也许是所有通道都没有数据
+            any_data_exists = any(data for data in history.values())
+            if not any_data_exists:
+                print("No data recorded at all.")
+                return None
+            # 如果有数据但不在选中通道里，我们仍然需要一个时间轴来处理空时间范围的情况
+            # 随便找一个有数据的通道
+            fallback_channel = next(ch for ch, data in history.items() if data)
+            full_timestamps = [ts for ts, temp in history[fallback_channel]]
+        else:
+            full_timestamps = [ts for ts, temp in history[first_channel_with_data]]
+
+        # 如果即使回退也找不到任何时间戳（例如测试刚开始就停止）
+        if not full_timestamps:
             return None
+
+        try:
+            # 如果输入框为空，则使用完整范围
+            start_offset = float(start_str) if start_str and start_str.strip() else 0
+            end_offset = float(end_str) if end_str and end_str.strip() else (full_timestamps[-1] - self.start_timestamp)
+        except ValueError:
+            messagebox.showerror("Error", "Invalid time range. Please enter numbers only.")
+            return None
+
         target_start_ts = self.start_timestamp + start_offset
         target_end_ts = self.start_timestamp + end_offset
+
         start_idx = self.find_closest_timestamp_index(full_timestamps, target_start_ts)
         end_idx = self.find_closest_timestamp_index(full_timestamps, target_end_ts)
+
         if start_idx > end_idx: start_idx, end_idx = end_idx, start_idx
+
         actual_slice_start_ts = full_timestamps[start_idx]
         sliced_history = {}
         sliced_max_temps = np.full(160, -np.inf)
+
         for ch in channels_to_slice:
             if ch in history and history[ch]:
+                # 对该通道的完整历史进行切片
                 sliced_history[ch] = list(history[ch])[start_idx: end_idx + 1]
                 if sliced_history[ch]:
                     temps_in_slice = [temp for ts, temp in sliced_history[ch]]
                     sliced_max_temps[ch] = max(temps_in_slice)
+
         return {'history': sliced_history, 'max_temps': sliced_max_temps, 'actual_start_ts': actual_slice_start_ts}
 
     def get_formatted_excel_data(self, channels_to_export, start_str, end_str):
