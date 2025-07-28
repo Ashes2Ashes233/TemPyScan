@@ -19,9 +19,10 @@ def generate_pdf_report(path, report_data, plot_data_list):
 
     story = []
 
-    # ... (1. 标题, 2. 基础信息, 3. 现象/结果/备注, 4. 测试数据表格 )
-    story.append(Paragraph("Heating Test Summary", styles['h1']))
+    # (1. 标题, 2. 基础信息, 3. 现象/结果/备注, 4. 测试数据表格 )
+    story.append(Paragraph("Heating Test Report", styles['Title']))
     story.append(Spacer(1, 0.2 * inch))
+    story.append(Paragraph("Heating Test Info:", styles['h2']))
     info_data = [
         [Paragraph('Test Name:', styles['Normal']), Paragraph(report_data.get('Test name', ''), styles['Normal'])],
         [Paragraph('Test Type:', styles['Normal']), Paragraph(report_data.get('Test type', ''), styles['Normal'])],
@@ -41,7 +42,6 @@ def generate_pdf_report(path, report_data, plot_data_list):
          Paragraph(report_data.get('Operating Frequency', ''), styles['Normal'])],
         [Paragraph('Operating Duration:', styles['Normal']),
          Paragraph(report_data.get('Operating Duration', ''), styles['Normal'])],
-        [Paragraph('Test Date:', styles['Normal']), Paragraph(report_data.get('Test Date', ''), styles['Normal'])],
         [Paragraph('Start time:', styles['Normal']), Paragraph(report_data.get('Start time', ''), styles['Normal'])],
         [Paragraph('Stop time:', styles['Normal']), Paragraph(report_data.get('Stop time', ''), styles['Normal'])],
         [Paragraph('Ambient Channel:', styles['Normal']),
@@ -81,16 +81,16 @@ def generate_pdf_report(path, report_data, plot_data_list):
     story.append(data_table)
     story.append(PageBreak())
 
-    # --- 循环添加多个图像 ---
+    # 循环添加多个图像
     #story.append(Spacer(1, 0.2 * inch))
     story.append(Paragraph("Test Graph", styles['h2']))
 
     if plot_data_list:
         for plot_info in plot_data_list:
-            plot_title = plot_info.get('title', 'Test Graph')
+            #plot_title = plot_info.get('title', 'Test Graph')
             plot_path = plot_info.get('path')
 
-            # 添加每个图的标题
+            # 添加每个图的标题 (已废弃）
             #story.append(Spacer(1, 0.2 * inch))
             #story.append(Paragraph(plot_title, styles['h3']))
             #story.append(Spacer(1, 0.1 * inch))

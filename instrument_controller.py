@@ -5,7 +5,8 @@ import pyvisa
 import pyvisa_py
 import numpy as np
 
-# --- 仿真器代码 ---
+
+# 仿真器
 class FakeKeithley2701:
     def __init__(self, address):
         self.address = address
@@ -25,6 +26,9 @@ class FakeKeithley2701:
         if not self.connected:
             raise ConnectionError("模拟设备未连接")
         if command == '*IDN?':
+            # 根据连接的设备类型返回不同IDN
+            if "GPIB" in self.address:
+                return "KEITHLEY INSTRUMENTS INC.,MODEL 2700,DEV002,D07/A02"
             return "KEITHLEY INSTRUMENTS INC.,MODEL 2701,DEV001,A09/A02"
         elif command.upper().startswith(('READ?', 'FETC?')):
             import numpy as np
@@ -40,41 +44,75 @@ class FakeKeithley2701:
         print("模拟设备：连接已断开。")
 
 
-# --- 真实设备控制器 ---
-class Keithley2701Controller:
-    def __init__(self, address):
-        # 恢复原始的、正确的SOCKET连接地址格式
-        self.address = f"TCPIP0::{address}::1394::SOCKET"
-        # --- 关键修正：明确使用 pyvisa-py 后端 ---
-        # 这能解决很多跨平台和环境的依赖问题
-        self.rm = pyvisa.ResourceManager('@py')
+# 真实设备控制器
+class KeithleyController:
+    def __init__(self, conn_type, address):
+        """
+        初始化控制器.
+        :param conn_type: 连接类型, 'TCPIP' 或 'GPIB'.
+        :param address: IP地址或GPIB地址.
+        """
+        self.conn_type = conn_type.upper()
+        self.address_str = address
+        self.resource_string = self._build_resource_string()
+        self.model = None  # 新增模型标识
+
+        # 如果安装了NI-VISA，可以传入空字符串''或不传参数。
+        self.rm = pyvisa.ResourceManager()
         self.instrument = None
         self.connected = False
+        self.sample_count = 80
         self.scan_list = "(@101:140,201:240)"
+        self.opt = "@101:140,201:240"
+
+    def _build_resource_string(self):
+        """
+        根据连接类型构建PyVISA资源字符串.
+        """
+        if self.conn_type == 'TCPIP':
+            # TCPIP连接字符串 (Keithley 2701)
+            return f"TCPIP0::{self.address_str}::1394::SOCKET"
+        elif self.conn_type == 'GPIB':
+            # GPIB连接字符串 (Keithley 2700)
+            # 假设GPIB板卡号为0，地址由用户输入
+            return f"GPIB0::{self.address_str}::INSTR"
+        else:
+            raise ValueError(f"不支持的连接类型: {self.conn_type}")
 
     def connect(self):
         """
         建立与设备的连接
         """
         try:
-            print(f"正在尝试以SOCKET模式连接到: {self.address}")
-            self.instrument = self.rm.open_resource(self.address)
+            print(f"正在尝试连接到: {self.resource_string}")
+            self.instrument = self.rm.open_resource(self.resource_string)
 
             # 设置通信参数
             self.instrument.read_termination = '\n'
             self.instrument.write_termination = '\n'
             self.instrument.timeout = 20000  # 20秒判定超时
 
-            # 给予设备响应时间
             time.sleep(0.2)
 
-            # 直接发送验证指令。query方法内部的逻辑已被修正。
             print("连接已建立，正在验证设备身份...")
             idn = self.query('*IDN?')
-            print(f"收到设备ID: {idn}")
+            installed_modules = self.query('*OPT?')
+            print(f"已安装模块: {installed_modules}")
+            if installed_modules == "7708,7708":
+                self.scan_list = "(@101:140,201:240)"
+                self.sample_count = 80
+                self.opt = "@101:140,201:240"
+            elif installed_modules == "7708,NONE":
+                self.scan_list = "(@101:140)"
+                self.sample_count = 40
+                self.opt = "@101:140"
+            elif installed_modules == "NONE,7708":
+                self.scan_list = "(@201:240)"
+                self.sample_count = 40
+                self.opt = "@201:240"
 
-            if 'KEITHLEY' in idn.upper() and '2701' in idn:
-                # --- 只有在验证成功后，才将状态设为True ---
+            # 验证逻辑可以更通用
+            if 'KEITHLEY' in idn.upper() and ('2701' in idn or '2700' in idn):
                 self.connected = True
                 print("设备验证成功，连接已就绪。")
                 return True
@@ -84,7 +122,15 @@ class Keithley2701Controller:
                 return False
 
         except pyvisa.errors.VisaIOError as e:
-            print(f"连接失败：发生VISA I/O错误。请检查IP地址、网络和防火墙。")
+            print(f"连接失败：发生VISA I/O错误。")
+            print("请检查:")
+            if self.conn_type == 'TCPIP':
+                print("- IP地址是否正确且设备在线？")
+                print("- 网络连接和防火墙设置是否正确？")
+            elif self.conn_type == 'GPIB':
+                print("- GPIB地址是否正确？")
+                print("- GPIB卡驱动 (如NI-VISA) 是否已正确安装？")
+                print("- 设备是否已开机并连接到GPIB总线？")
             print(f"详细错误: {e}")
             return False
         except Exception as e:
@@ -99,13 +145,13 @@ class Keithley2701Controller:
             raise ConnectionError("仪器未连接，无法发送指令")
         try:
             self.instrument.write(command)
-            time.sleep(0.05)
+            time.sleep(0.1)
         except pyvisa.errors.VisaIOError as e:
             print(f"指令 '{command}' 写入失败: {e}")
             self.connected = False  # 更新状态
             raise  # 重新抛出异常，让上层知道操作失败
 
-    def init_temperature_scan(self, thermocouple_type='K', nplc=5):
+    def init_temperature_scan(self, thermocouple_type='K', nplc=1):
         """
         初始化仪器进行多通道温度扫描
         配置仪器进行80个通道的热电偶温度测量
@@ -117,34 +163,32 @@ class Keithley2701Controller:
         print("\n开始配置温度扫描参数...")
         try:
             self.write('*CLS')  # 清除状态
-            # 1. 设置扫描列表
-            self.write(f"ROUT:SCAN {self.scan_list}")
-
-            # 2. 配置全局参数
+            print(self.scan_list)
+            # 1. 配置全局参数
             self.write(f"SENS:FUNC 'TEMP', {self.scan_list}")
-            self.write(f"SENS:TEMP:NPLC {nplc}")  # 设置积分时间
+            self.write(f"SENS:TEMP:NPLC {nplc}, {self.scan_list}")  # 设置积分时间
+            self.write("UNIT:TEMP C")
 
-            # 3. 配置通道级参数
+            # 2. 配置通道级参数
             self.write(f"SENS:TEMP:TRAN TC, {self.scan_list}")
-            self.write(f"SENS:TC:TYPE {thermocouple_type}, {self.scan_list}")
-            self.write(f"SENS:TC:CJON:STATE ON, {self.scan_list}")
-            self.write(f"SENS:TEMP:UNIT C, {self.scan_list}")
+            self.write(f"SENS:TEMP:TC:TYPE {thermocouple_type}, {self.scan_list}")
+            self.write(f"SENS:TEMP:TC:RJUN:RSEL INT, {self.scan_list}")
 
 
-            # 4. 配置触发和采样
+            # 3. 配置触发和采样
             self.write("TRAC:CLE")
-            self.write("TRIG:SOUR IMM")
-            self.write("SAMP:COUN 80")
-            self.write("ROUT:SCAN:TSO IMM")
             self.write("INIT:CONT OFF")
-            self.write("FORM:ELEM READ")
+            self.write("TRIG:SOUR IMM")
             self.write("TRIG:COUN 1")
+            self.write(f"SAMP:COUN {self.sample_count}")
+            self.write(f"ROUT:SCAN {self.scan_list}")
+            self.write("ROUT:SCAN:TSO IMM")
+            self.write("FORM:ELEM READ")
+            self.write("ROUT:SCAN:LSEL INT")  # 扫描打开
 
-            # 添加同步点确保配置完成
-            #self.query("*OPC?")
 
             # 正确查询通道配置（添加空格）
-            print("测量函数:", self.query("SENS:FUNC? (@101)"))
+            #print("测量函数:", self.query("SENS:FUNC? (@101)"))
             #print("通道101的热电偶类型:", self.query("SENS:TC:TYPE? (@101)"))  # 应返回 "K"
             #print("当前扫描列表:", self.query("ROUT:SCAN?"))  # 应返回您的扫描列表
             # 查询扫描列表
@@ -172,13 +216,12 @@ class Keithley2701Controller:
     def get_data(self,command):
         if command.upper().startswith(('READ?', 'FETC?')):
             real_temp=[]
-            self.write("ROUT:SCAN:LSEL INT") #扫描打开
             temperatures = self.instrument.query_ascii_values('READ?', container=list)  # 直接获取列表
-            self.write("ROUT:SCAN:LSEL NONE") #扫描关闭
-            """
-            这里需要说明一下，由于80个通道扫描耗时较高，最终获得的数据间隔可能与设置的不一致
-            """
             #print(temperatures)
+            #self.write("ROUT:SCAN:LSEL NONE") #扫描关闭
+            """
+            这里需要说明一下，由于80个通道扫描耗时较高，最终获得的数据间隔与设置的不一致
+            """
             for temp in temperatures:
                 if 1000000 > temp:
                     real_temp.append(float(temp))
@@ -193,6 +236,7 @@ class Keithley2701Controller:
     def close(self):
         if self.instrument:
             try:
+                self.write("ROUT:SCAN:LSEL NONE") #扫描关闭
                 self.instrument.close()
                 print("设备连接已成功关闭。")
             except pyvisa.errors.VisaIOError:
