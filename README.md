@@ -1,4 +1,4 @@
-TemPyScan - Thermocouple Scanning and Reporting Software
+# TemPyScan - Thermocouple Scanning and Reporting Software
 Function Description
 TemPyScan is a desktop application designed specifically for Keithley 2701 data acquisition/multi-channel comprehensive testing system, aiming to provide a complete solution from multi-channel temperature data acquisition, real-time monitoring to professional report generation. The software enables users to easily complete complex temperature rise tests and automate tedious data organization and report production work through a simple graphical interface.
 
