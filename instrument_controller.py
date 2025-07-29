@@ -125,12 +125,12 @@ class KeithleyController:
             print(f"连接失败：发生VISA I/O错误。")
             print("请检查:")
             if self.conn_type == 'TCPIP':
-                print("- IP地址是否正确且设备在线？")
-                print("- 网络连接和防火墙设置是否正确？")
+                print("IP地址是否正确且设备在线？")
+                print("网络连接和防火墙设置是否正确？")
             elif self.conn_type == 'GPIB':
-                print("- GPIB地址是否正确？")
-                print("- GPIB卡驱动 (如NI-VISA) 是否已正确安装？")
-                print("- 设备是否已开机并连接到GPIB总线？")
+                print("GPIB地址是否正确？")
+                print("GPIB卡驱动 (如NI-VISA) 是否已正确安装？")
+                print("设备是否已开机并连接到GPIB总线？")
             print(f"详细错误: {e}")
             return False
         except Exception as e:

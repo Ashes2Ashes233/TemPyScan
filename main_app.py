@@ -9,7 +9,7 @@ import numpy as np
 from datetime import datetime
 from collections import deque
 from gui_frames import ConnectionFrame, SettingsFrame, RunningFrame
-# from instrument_controller import FakeKeithley2701 as InstrumentController
+#from instrument_controller import FakeKeithley2701 as InstrumentController
 from instrument_controller import KeithleyController as InstrumentController
 from report_generator import generate_pdf_report
 import os
@@ -221,12 +221,11 @@ class ThermoApp(tk.Tk):
         if self.instrument and self.instrument.connected: return self.instrument.query("*IDN?")
         return "N/A"
 
-    def start_data_acquisition(self, interval, ambient_channel_str):
+    def start_data_acquisition(self, interval, ambient_channel_str, thermocouple_type):
         self.is_running = True
         self.stop_thread.clear()
         self.max_temps.fill(-np.inf)
 
-        # 清除历史数据
         for i in range(160):
             self.history[i].clear()
 
@@ -234,27 +233,24 @@ class ThermoApp(tk.Tk):
         self.start_timestamp = time.time()
         self.stop_time = None
 
-        # 设置环境通道
         try:
-            # 用户输入的是通道号（1-160），转换为索引（0-159）
             self.ambient_channel = int(ambient_channel_str) - 1
-        except ValueError:
+        except (ValueError, TypeError):
             self.ambient_channel = None
-        print(self.ambient_channel)
-        # 重置环境温度记录
+
         self.ambient_start_temp = "N/A"
         self.ambient_end_temp = "N/A"
 
-        # 启动数据采集线程
+        # 将用户输入的“目标周期M”直接传递给采集循环
         self.data_thread = threading.Thread(
             target=self._data_acquisition_loop,
-            args=(interval,),
+            args=(interval,),  # interval 就是 M
             daemon=True
         )
         self.data_thread.start()
 
-        # 初始化仪器
-        self.instrument.init_temperature_scan()
+        self.instrument.init_temperature_scan(thermocouple_type=thermocouple_type)
+
         time.sleep(0.1)
         self.init = True
 
@@ -287,14 +283,25 @@ class ThermoApp(tk.Tk):
                             self.history[i] = deque(list(original_deque)[::2])
                     print("Downsampling complete.")
 
-    def _data_acquisition_loop(self, interval):
+    def _data_acquisition_loop(self, desired_period_M):
+        """
+        实现自适应间隔定时的数据采集循环。
+        :param desired_period_M: 用户期望的总周期 (秒)
+        """
         while not self.stop_thread.is_set():
             if self.instrument and self.instrument.connected and self.init == True:
                 try:
-                    read_time = time.time()
+                    # 1. 记录循环开始的精确时间点
+                    loop_start_time = time.time()
+
+                    # 2. 执行数据读取 (耗时为 N)
                     raw_data = self.instrument.get_data('READ?')
+
+                    # 3. 记录数据读取完成的时间点
+                    read_time = time.time()
+
                     if raw_data:
-                        temps_80ch = np.array([t for t in raw_data])
+                        temps_80ch = np.array([t if t is not None else np.nan for t in raw_data])
                         if self.instrument.opt == "@101:140,201:240":
                             temps_160ch = np.full(160, np.nan)
                             temps_160ch[self.channel_offset: self.channel_offset + 80] = temps_80ch
@@ -307,13 +314,25 @@ class ThermoApp(tk.Tk):
                             temps_160ch = np.full(160, np.nan)
                             temps_160ch[self.channel_offset + 40: self.channel_offset + 80] = temps_80ch
                             self.data_queue.put((read_time, temps_160ch))
-                        #if len(temps_80ch) == 80:
-                        #    temps_160ch = np.full(160, np.nan)
-                        #    temps_160ch[self.channel_offset: self.channel_offset + 80] = temps_80ch
-                        #    self.data_queue.put((read_time, temps_160ch))
+
+                    # 计算并执行动态等待
+                    # 4. 计算本次扫描实际耗时 N
+                    scan_duration_N = time.time() - loop_start_time
+
+                    # 5. 计算需要等待的时间 T = M - N
+                    delay_T = desired_period_M - scan_duration_N
+
+                    # 6. 处理 N > M 的情况
+                    if delay_T < 0:
+                        print(f"警告：扫描耗时({scan_duration_N:.2f}s)已超过目标周期({desired_period_M}s)。")
+                        delay_T = 0.2  # 设置为0.2秒
+
+                    # 7. 执行等待
+                    time.sleep(delay_T)
+
                 except Exception as e:
                     print(f"数据读取错误: {e}")
-            time.sleep(interval)
+                    time.sleep(desired_period_M)  # 发生错误时，按原周期等待
 
     def process_queue(self):
         try:
@@ -331,13 +350,9 @@ class ThermoApp(tk.Tk):
                         if self.ambient_channel is not None and i == self.ambient_channel:
                             # 如果是环境通道且是第一个有效数据点，记录开始温度
                             if self.ambient_start_temp == "N/A":
-                                print('1')
                                 self.ambient_start_temp = f"{temps[i]:.2f}"
-                                print(self.ambient_start_temp)
                             # 总是更新结束温度为最后一个有效值
-                            print('2')
                             self.ambient_end_temp = f"{temps[i]:.2f}"
-                            print(self.ambient_end_temp)
 
                 running_frame = self.frames["RunningFrame"]
                 if self.is_running:

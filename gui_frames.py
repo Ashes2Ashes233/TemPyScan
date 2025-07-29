@@ -17,6 +17,66 @@ except ImportError:
     openpyxl = None
 
 
+class ScanSettingsDialog(tk.Toplevel):
+    def __init__(self, parent, current_settings):
+        super().__init__(parent)
+        self.transient(parent)
+        self.title("Scan Settings")
+        self.geometry("360x200+400+200")
+        self.parent = parent
+        self.result = None
+
+        # UI 控件
+        frame = ttk.Frame(self, padding="10")
+        frame.pack(expand=True, fill="both")
+
+        # 扫描间隔 (Cycle)
+        ttk.Label(frame, text="Cycle/s:").grid(row=0, column=0, sticky="w", pady=5)
+        self.interval_entry = ttk.Entry(frame)
+        self.interval_entry.grid(row=0, column=1, pady=5)
+        self.interval_entry.insert(0, current_settings.get('interval', '10'))
+
+        # 环境通道 (Ambient Channel)
+        ttk.Label(frame, text="Ambient Channel:").grid(row=1, column=0, sticky="w", pady=5)
+        self.ambient_entry = ttk.Entry(frame)
+        self.ambient_entry.grid(row=1, column=1, pady=5)
+        self.ambient_entry.insert(0, current_settings.get('ambient', '1'))
+
+        # 热电偶类型 (Thermocouple Type)
+        ttk.Label(frame, text="Thermocouple Type:").grid(row=2, column=0, sticky="w", pady=5)
+        self.tc_type_var = tk.StringVar(value=current_settings.get('tc_type', 'K'))
+        self.tc_type_combo = ttk.Combobox(frame, textvariable=self.tc_type_var, state="readonly",
+                                          values=["J", "K", "T", "E", "R", "S", "B", "N"])
+        self.tc_type_combo.grid(row=2, column=1, pady=5)
+
+        # 按钮
+        button_frame = ttk.Frame(self, padding="10")
+        button_frame.pack(fill="x")
+        ttk.Button(button_frame, text="Save", command=self.on_save).pack(side="right", padx=5)
+        ttk.Button(button_frame, text="Cancel", command=self.on_cancel).pack(side="right")
+
+        # 窗口行为
+        self.protocol("WM_DELETE_WINDOW", self.on_cancel)
+        self.grab_set()  # 模态化，阻止与其他窗口交互
+        self.wait_window(self)
+
+    def on_save(self):
+        # 验证输入
+        if not self.interval_entry.get().isdigit() or not self.ambient_entry.get().isdigit():
+            messagebox.showerror("Invalid Input", "Cycle and Ambient Channel must be numbers.", parent=self)
+            return
+
+        self.result = {
+            'interval': self.interval_entry.get(),
+            'ambient': self.ambient_entry.get(),
+            'tc_type': self.tc_type_var.get()
+        }
+        self.destroy()
+
+    def on_cancel(self):
+        self.result = None
+        self.destroy()
+
 # ConnectionFrame (已支持GPIB)
 class ConnectionFrame(ttk.Frame):
     def __init__(self, parent, controller):
@@ -27,7 +87,7 @@ class ConnectionFrame(ttk.Frame):
         self.columnconfigure(1, weight=0)  # 主内容列
         self.columnconfigure(2, weight=1)
 
-        # --- 仪器选择 ---
+        # 仪器选择
         ttk.Label(self, text="Select Instrument:", font=("Helvetica", 12)).grid(row=0, column=1, pady=(20, 5))
         self.instrument_var = tk.StringVar()
         self.instrument_selector = ttk.Combobox(self, textvariable=self.instrument_var, state="readonly", width=35)
@@ -36,17 +96,17 @@ class ConnectionFrame(ttk.Frame):
         self.instrument_selector.grid(row=1, column=1, pady=5, ipady=4)
         self.instrument_selector.bind("<<ComboboxSelected>>", self.on_instrument_select)
 
-        # --- 地址输入 ---
+        # 地址输入
         self.address_label = ttk.Label(self, text="IP Address:", font=("Helvetica", 12))
         self.address_label.grid(row=2, column=1, pady=(10, 5))
 
         self.address_entry = ttk.Entry(self, width=38)
         self.address_entry.grid(row=3, column=1, pady=5, ipady=4)
 
-        # --- 初始状态 ---
+        # 初始状态
         self.on_instrument_select(None)  # 初始化标签和默认地址
 
-        # --- 通道范围选择 ---
+        # 通道范围选择
         self.device_type_var = tk.StringVar(value="1-80")
         device_selector_frame = ttk.Frame(self)
         device_selector_frame.grid(row=4, column=1, pady=5)
@@ -56,7 +116,7 @@ class ConnectionFrame(ttk.Frame):
         ttk.Radiobutton(device_selector_frame, text="81-160", variable=self.device_type_var, value="81-160").pack(
             side="left")
 
-        # --- 按钮和状态 ---
+        # 按钮和状态
         button_frame = ttk.Frame(self)
         button_frame.grid(row=5, column=1, pady=10)
         self.connect_button = ttk.Button(button_frame, text="Connect", command=self.connect_device)
@@ -204,6 +264,12 @@ class RunningFrame(ttk.Frame):
     def __init__(self, parent, controller):
         super().__init__(parent)
         self.controller = controller
+
+        # 存储扫描参数
+        self.scan_interval = "2"  # 默认值
+        self.ambient_channel_str = "1"  # 默认值
+        self.thermocouple_type = "K"  # 默认值
+
         main_pane = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
         main_pane.pack(fill=tk.BOTH, expand=True)
         left_frame = ttk.Frame(main_pane)
@@ -215,102 +281,109 @@ class RunningFrame(ttk.Frame):
         self.start_button.pack(side="left", padx=5)
         self.stop_button = ttk.Button(control_frame, text="Stop", command=self.stop_test, state="disabled")
         self.stop_button.pack(side="left", padx=5)
-        ttk.Label(control_frame, text="Cycle/s(Scan time not included):").pack(side="left", padx=(10, 0))
-        self.interval_entry = ttk.Entry(control_frame, width=5)
-        self.interval_entry.insert(0, "2")
-        self.interval_entry.pack(side="left", padx=5)
-        # 添加环境通道设置
-        ambient_frame = ttk.Frame(control_frame)
-        ambient_frame.pack(side="left", padx=(10, 0))
-        ttk.Label(ambient_frame, text="Ambient Channel:").pack(side="left")
-        self.ambient_channel_entry = ttk.Entry(ambient_frame, width=5)
-        self.ambient_channel_entry.pack(side="left", padx=5)
-        self.ambient_channel_entry.insert(0, "0")  # 默认值
-        table_frame = ttk.Frame(left_frame)
+
+        # 用一个按钮替换多个输入框
+        self.scan_settings_button = ttk.Button(control_frame, text="Scan Settings", command=self.open_scan_settings)
+        self.scan_settings_button.pack(side="left", padx=(10, 0))
+
+        table_frame = ttk.Frame(left_frame);
         table_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        cols = ("Channel", "Location", "Current Temp (°C)", "Max Temp (°C)", "Threshold (°C)")
+        cols = ("Channel", "Location", "Current Temp (°C)", "Max Temp (°C)", "Threshold (°C)");
         self.tree = ttk.Treeview(table_frame, columns=cols, show='headings', height=25)
         for col in cols: self.tree.heading(col, text=col)
-        self.tree.column("Channel", width=60, anchor='center')
-        self.tree.column("Location", width=150, anchor='w')
-        self.tree.column("Current Temp (°C)", width=120, anchor='center')
-        self.tree.column("Max Temp (°C)", width=120, anchor='center')
+        self.tree.column("Channel", width=60, anchor='center');
+        self.tree.column("Location", width=150, anchor='w');
+        self.tree.column("Current Temp (°C)", width=120, anchor='center');
+        self.tree.column("Max Temp (°C)", width=120, anchor='center');
         self.tree.column("Threshold (°C)", width=120, anchor='center')
-        scrollbar = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scrollbar.set)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        scrollbar = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.tree.yview);
+        self.tree.configure(yscrollcommand=scrollbar.set);
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y);
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self.tree.tag_configure('over_threshold', foreground='white', background='red', font=('Consolas', 10, 'bold'))
+        self.tree.tag_configure('over_threshold', foreground='white', background='red', font=('Consolas', 10, 'bold'));
         self.tree.bind("<Double-1>", self.on_double_click)
-        right_pane = ttk.PanedWindow(main_pane, orient=tk.VERTICAL)
+        right_pane = ttk.PanedWindow(main_pane, orient=tk.VERTICAL);
         main_pane.add(right_pane, weight=3)
-        plot_frame = ttk.LabelFrame(right_pane, text="Graph Panel - Use toolbar to Pan/Zoom")
+        plot_frame = ttk.LabelFrame(right_pane, text="Graph Panel - Use toolbar to Pan/Zoom");
         right_pane.add(plot_frame, weight=2)
-        self.fig = Figure(figsize=(8, 6), dpi=100)
-        self.ax = self.fig.add_subplot(111)
+        self.fig = Figure(figsize=(8, 6), dpi=100);
+        self.ax = self.fig.add_subplot(111);
         self.canvas = FigureCanvasTkAgg(self.fig, master=plot_frame)
-        self.canvas_widget = self.canvas.get_tk_widget()
-        self.canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-        self.toolbar = NavigationToolbar2Tk(self.canvas, plot_frame)
+        self.canvas_widget = self.canvas.get_tk_widget();
+        self.canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=True);
+        self.toolbar = NavigationToolbar2Tk(self.canvas, plot_frame);
         self.toolbar.update()
-        ch_select_frame = ttk.Frame(plot_frame)
-        ch_select_frame.pack(fill=tk.X, pady=(0, 5))
+        ch_select_frame = ttk.Frame(plot_frame);
+        ch_select_frame.pack(fill=tk.X, pady=(0, 5));
         ttk.Label(ch_select_frame, text="Channels:").pack(side=tk.LEFT, padx=5)
-        self.plot_channels_entry = ttk.Entry(ch_select_frame)
+        self.plot_channels_entry = ttk.Entry(ch_select_frame);
         self.plot_channels_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
-        time_frame = ttk.Frame(plot_frame)
-        time_frame.pack(fill=tk.X, pady=(2, 5))
-        ttk.Label(time_frame, text="Time Range (s):").pack(side=tk.LEFT, padx=5)
-        ttk.Label(time_frame, text="Start:").pack(side=tk.LEFT)
-        self.start_time_entry = ttk.Entry(time_frame, width=8)
-        self.start_time_entry.pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Label(time_frame, text="End:").pack(side=tk.LEFT)
-        self.end_time_entry = ttk.Entry(time_frame, width=8)
+        time_frame = ttk.Frame(plot_frame);
+        time_frame.pack(fill=tk.X, pady=(2, 5));
+        ttk.Label(time_frame, text="Time Range (s):").pack(side=tk.LEFT, padx=5);
+        ttk.Label(time_frame, text="Start:").pack(side=tk.LEFT);
+        self.start_time_entry = ttk.Entry(time_frame, width=8);
+        self.start_time_entry.pack(side=tk.LEFT, padx=(0, 5));
+        ttk.Label(time_frame, text="End:").pack(side=tk.LEFT);
+        self.end_time_entry = ttk.Entry(time_frame, width=8);
         self.end_time_entry.pack(side=tk.LEFT)
-        self.update_plot_button = ttk.Button(time_frame, text="Update Plot", command=self.redraw_historical_plot)
+        self.update_plot_button = ttk.Button(time_frame, text="Update Plot", command=self.redraw_historical_plot);
         self.update_plot_button.pack(side=tk.RIGHT, padx=5)
-        y_frame = ttk.Frame(plot_frame)
-        y_frame.pack(fill=tk.X, pady=(2, 5))
-        ttk.Label(y_frame, text="Y Range (°C):").pack(side=tk.LEFT, padx=5)
-        ttk.Label(y_frame, text="Min:").pack(side=tk.LEFT)
-        self.y_min_entry = ttk.Entry(y_frame, width=8)
-        self.y_min_entry.pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Label(y_frame, text="Max:").pack(side=tk.LEFT)
-        self.y_max_entry = ttk.Entry(y_frame, width=8)
+        y_frame = ttk.Frame(plot_frame);
+        y_frame.pack(fill=tk.X, pady=(2, 5));
+        ttk.Label(y_frame, text="Y Range (°C):").pack(side=tk.LEFT, padx=5);
+        ttk.Label(y_frame, text="Min:").pack(side=tk.LEFT);
+        self.y_min_entry = ttk.Entry(y_frame, width=8);
+        self.y_min_entry.pack(side=tk.LEFT, padx=(0, 5));
+        ttk.Label(y_frame, text="Max:").pack(side=tk.LEFT);
+        self.y_max_entry = ttk.Entry(y_frame, width=8);
         self.y_max_entry.pack(side=tk.LEFT)
-        report_build_frame = ttk.Frame(right_pane)
+        report_build_frame = ttk.Frame(right_pane);
         right_pane.add(report_build_frame, weight=1)
-        report_info_frame = ttk.LabelFrame(report_build_frame, text="Report Notes")
-        report_info_frame.pack(fill="both", expand=True, padx=5, pady=5)
+        report_info_frame = ttk.LabelFrame(report_build_frame, text="Report Notes");
+        report_info_frame.pack(fill="both", expand=True, padx=5, pady=5);
         report_info_frame.columnconfigure(1, weight=1)
-        ttk.Label(report_info_frame, text="Phenomena&Result:").grid(row=0, column=0, sticky='nw', padx=5, pady=2)
-        self.phenomena_text = scrolledtext.ScrolledText(report_info_frame, height=3)
+        ttk.Label(report_info_frame, text="Phenomena&Result:").grid(row=0, column=0, sticky='nw', padx=5, pady=2);
+        self.phenomena_text = scrolledtext.ScrolledText(report_info_frame, height=3);
         self.phenomena_text.grid(row=0, column=1, sticky='nsew', padx=5, pady=2)
-        ttk.Label(report_info_frame, text="Notes:").grid(row=1, column=0, sticky='nw', padx=5, pady=2)
-        self.notes_text = scrolledtext.ScrolledText(report_info_frame, height=3)
+        ttk.Label(report_info_frame, text="Notes:").grid(row=1, column=0, sticky='nw', padx=5, pady=2);
+        self.notes_text = scrolledtext.ScrolledText(report_info_frame, height=3);
         self.notes_text.grid(row=1, column=1, sticky='nsew', padx=5, pady=2)
-        report_info_frame.rowconfigure(0, weight=1)
+        report_info_frame.rowconfigure(0, weight=1);
         report_info_frame.rowconfigure(1, weight=1)
-        export_button_frame = ttk.Frame(report_build_frame)
-        export_button_frame.pack(pady=10)
+        export_button_frame = ttk.Frame(report_build_frame);
+        export_button_frame.pack(pady=10);
         self.create_report_button = ttk.Button(export_button_frame, text="Proceed to Report Settings",
-                                               command=self.proceed_to_report)
+                                               command=self.proceed_to_report);
         self.create_report_button.pack(side="left", padx=10)
 
-    def start_test(self):
-        # 获取环境通道设置
-        ambient_channel = self.ambient_channel_entry.get().strip()
+    # 打开弹窗的方法
+    def open_scan_settings(self):
+        current_settings = {
+            'interval': self.scan_interval,
+            'ambient': self.ambient_channel_str,
+            'tc_type': self.thermocouple_type
+        }
+        dialog = ScanSettingsDialog(self, current_settings)
+        # dialog.wait_window() 会在弹窗关闭后才继续执行
+        if dialog.result:
+            self.scan_interval = dialog.result['interval']
+            self.ambient_channel_str = dialog.result['ambient']
+            self.thermocouple_type = dialog.result['tc_type']
+            print(f"Scan settings updated: Interval={self.scan_interval}s, "
+                  f"Ambient Ch={self.ambient_channel_str}, TC Type={self.thermocouple_type}")
 
-        # 清除树状视图
+    def start_test(self):
         self.tree.delete(*self.tree.get_children())
         configs = self.controller.get_channel_configs()
         for i, config in enumerate(configs):
             self.tree.insert("", "end", iid=i, values=(i + 1, config['location'], "N/A", "N/A", config['threshold']))
 
-        # 启动数据采集，传递环境通道设置
+        # 从实例变量读取参数
         self.controller.start_data_acquisition(
-            int(self.interval_entry.get()),
-            ambient_channel
+            int(self.scan_interval),
+            self.ambient_channel_str,
+            self.thermocouple_type
         )
 
         self.start_button.config(state="disabled")
